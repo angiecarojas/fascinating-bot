@@ -736,31 +736,23 @@ async def start_web_server():
 @client.event
 async def on_ready():
 
-    print(
-        f"🤖 Logged in as "
-        f"{client.user} ({client.user.id})"
-    )
+    print(f"🤖 Logged in as {client.user} ({client.user.id})")
 
     try:
-
-        synced = await tree.sync()
-
-        print(
-            f"✅ Synced {len(synced)} slash commands."
-        )
-
+        synced = await client.tree.sync()
+        print(f"✅ Synced {len(synced)} slash commands.")
     except Exception as exc:
+        print(f"❌ [SYNC] Error: {exc}")
 
-        print(
-            f"[SYNC] Error: {exc}"
-        )
-
-    await start_web_server()
+    try:
+        await start_web_server()
+        print("🌐 Web server started.")
+    except Exception as exc:
+        print(f"❌ [WEB] Error: {exc}")
 
     if not check_dbd_codes.is_running():
-
         check_dbd_codes.start()
-
+        print("🎁 DBD code checker started.")
 
 # =========================================================
 # INICIAR
