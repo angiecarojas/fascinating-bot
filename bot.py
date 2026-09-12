@@ -96,11 +96,16 @@ async def extract_song(query):
     """
 
     def make_song(info):
+
         if not info:
             return None
 
         if "entries" in info:
-            entries = [x for x in info["entries"] if x]
+
+            entries = [
+                x for x in info["entries"]
+                if x
+            ]
 
             if not entries:
                 return None
@@ -113,99 +118,148 @@ async def extract_song(query):
             return None
 
         return Song(
-            title=info.get("title", "Canción desconocida"),
+            title=info.get(
+                "title",
+                "Canción desconocida"
+            ),
             url=audio_url,
-            webpage_url=info.get("webpage_url"),
-            duration=info.get("duration", 0),
-            thumbnail=info.get("thumbnail"),
+            webpage_url=info.get(
+                "webpage_url"
+            ),
+            duration=info.get(
+                "duration",
+                0
+            ),
+            thumbnail=info.get(
+                "thumbnail"
+            ),
         )
 
     def extract():
 
-        is_url = query.startswith(("http://", "https://"))
+        is_url = query.startswith(
+            ("http://", "https://")
+        )
 
-        # =====================================================
-        # 1️⃣ YOUTUBE / URL DIRECTA
-        # =====================================================
+        # =================================================
+        # 1. YOUTUBE
+        # =================================================
 
         try:
 
-            options = YTDL_OPTIONS.copy()
+            options = {
+                **YTDL_OPTIONS,
+                "quiet": True,
+                "no_warnings": True,
+                "noprogress": True,
+            }
 
-            search_query = (
-                query
-                if is_url
-                else f"ytsearch1:{query}"
+            if is_url:
+
+                search_query = query
+
+            else:
+
+                search_query = (
+                    f"ytsearch1:{query}"
+                )
+
+            print(
+                f"[MUSIC] Intentando YouTube: {search_query}"
             )
 
-            with yt_dlp.YoutubeDL(options) as ydl:
+            with yt_dlp.YoutubeDL(
+                options
+            ) as ydl:
 
                 info = ydl.extract_info(
                     search_query,
                     download=False
                 )
 
-                song = make_song(info)
+            song = make_song(info)
 
-                if song:
-                    print(
-                        f"[MUSIC] Fuente: YouTube | {song.title}"
-                    )
+            if song:
 
-                    return song
+                print(
+                    f"[MUSIC] YouTube OK: {song.title}"
+                )
+
+                return song
 
         except Exception as exc:
 
             print(
-                f"[MUSIC] YouTube falló: {exc}"
+                f"[MUSIC] YouTube no disponible: {type(exc).__name__}"
             )
 
-        # =====================================================
-        # 2️⃣ SOUNDCLOUD
-        # =====================================================
+        # =================================================
+        # 2. SOUNDCLOUD
+        # =================================================
 
         try:
 
-            options = YTDL_OPTIONS.copy()
+            options = {
+                **YTDL_OPTIONS,
+                "quiet": True,
+                "no_warnings": True,
+                "noprogress": True,
+            }
 
             if is_url:
 
-                # Solo intentamos directamente si es SoundCloud
                 if "soundcloud.com" not in query.lower():
+
+                    print(
+                        "[MUSIC] URL no compatible con SoundCloud."
+                    )
+
                     return None
 
                 search_query = query
 
             else:
 
-                search_query = f"scsearch1:{query}"
+                search_query = (
+                    f"scsearch1:{query}"
+                )
 
-            with yt_dlp.YoutubeDL(options) as ydl:
+            print(
+                f"[MUSIC] Intentando SoundCloud: {search_query}"
+            )
+
+            with yt_dlp.YoutubeDL(
+                options
+            ) as ydl:
 
                 info = ydl.extract_info(
                     search_query,
                     download=False
                 )
 
-                song = make_song(info)
+            song = make_song(info)
 
-                if song:
-                    print(
-                        f"[MUSIC] Fuente: SoundCloud | {song.title}"
-                    )
+            if song:
 
-                    return song
+                print(
+                    f"[MUSIC] SoundCloud OK: {song.title}"
+                )
+
+                return song
 
         except Exception as exc:
 
             print(
-                f"[MUSIC] SoundCloud falló: {exc}"
+                f"[MUSIC] SoundCloud no disponible: {type(exc).__name__}: {exc}"
             )
+
+        print(
+            "[MUSIC] No se encontró una fuente reproducible."
+        )
 
         return None
 
     return await asyncio.to_thread(extract)
-
 
 async def connect_to_user_channel(interaction):
     if not interaction.user.voice:
