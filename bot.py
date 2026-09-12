@@ -58,6 +58,9 @@ from discord.ext import commands
 client = commands.Bot(command_prefix="!", intents=intents)
 tree = client.tree
 
+GUILD_ID = 512748868761550859
+GUILD = discord.Object(id=GUILD_ID)
+
 # =========================================================
 # MÚSICA
 # =========================================================
@@ -739,7 +742,8 @@ async def on_ready():
     print(f"🤖 Logged in as {client.user} ({client.user.id})")
 
     try:
-        synced = await client.tree.sync()
+        client.tree.copy_global_to(guild=GUILD)
+        synced = await client.tree.sync(guild=GUILD)
         print(f"✅ Synced {len(synced)} slash commands.")
     except Exception as exc:
         print(f"❌ [SYNC] Error: {exc}")
@@ -753,6 +757,7 @@ async def on_ready():
     if not check_dbd_codes.is_running():
         check_dbd_codes.start()
         print("🎁 DBD code checker started.")
+
 
 # =========================================================
 # INICIAR
