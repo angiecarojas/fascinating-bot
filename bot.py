@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
-from discord.ext import tasks
+from discord.ext import commands, tasks
 from aiohttp import web, ClientSession
 from bs4 import BeautifulSoup
 import yt_dlp
@@ -53,9 +53,10 @@ intents = discord.Intents.default()
 intents.voice_states = True
 intents.guilds = True
 
-client = discord.Client(intents=intents)
-tree = client.tree
+from discord.ext import commands
 
+client = commands.Bot(command_prefix="!", intents=intents)
+tree = client.tree
 
 # =========================================================
 # MÚSICA
