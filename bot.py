@@ -91,36 +91,118 @@ def get_queue(guild_id):
 
 async def extract_song(query):
     """
-    Busca una canción o procesa una URL.
-    yt-dlp permite buscar en YouTube y trabajar con múltiples fuentes.
+    Busca una canción primero en YouTube.
+    Si YouTube falla, intenta automáticamente SoundCloud.
     """
 
-    def extract():
-        is_url = query.startswith(("http://", "https://"))
+    def make_song(info):
+        if not info:
+            return None
 
-        options = YTDL_OPTIONS.copy()
+        if "entries" in info:
+            entries = [x for x in info["entries"] if x]
 
-        search_query = query if is_url else f"ytsearch1:{query}"
-
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(search_query, download=False)
-
-            if not info:
+            if not entries:
                 return None
 
-            if "entries" in info:
-                entries = [x for x in info["entries"] if x]
-                if not entries:
-                    return None
-                info = entries[0]
+            info = entries[0]
 
-            return Song(
-                title=info.get("title", "Canción desconocida"),
-                url=info["url"],
-                webpage_url=info.get("webpage_url"),
-                duration=info.get("duration", 0),
-                thumbnail=info.get("thumbnail"),
+        audio_url = info.get("url")
+
+        if not audio_url:
+            return None
+
+        return Song(
+            title=info.get("title", "Canción desconocida"),
+            url=audio_url,
+            webpage_url=info.get("webpage_url"),
+            duration=info.get("duration", 0),
+            thumbnail=info.get("thumbnail"),
+        )
+
+    def extract():
+
+        is_url = query.startswith(("http://", "https://"))
+
+        # =====================================================
+        # 1️⃣ YOUTUBE / URL DIRECTA
+        # =====================================================
+
+        try:
+
+            options = YTDL_OPTIONS.copy()
+
+            search_query = (
+                query
+                if is_url
+                else f"ytsearch1:{query}"
             )
+
+            with yt_dlp.YoutubeDL(options) as ydl:
+
+                info = ydl.extract_info(
+                    search_query,
+                    download=False
+                )
+
+                song = make_song(info)
+
+                if song:
+                    print(
+                        f"[MUSIC] Fuente: YouTube | {song.title}"
+                    )
+
+                    return song
+
+        except Exception as exc:
+
+            print(
+                f"[MUSIC] YouTube falló: {exc}"
+            )
+
+        # =====================================================
+        # 2️⃣ SOUNDCLOUD
+        # =====================================================
+
+        try:
+
+            options = YTDL_OPTIONS.copy()
+
+            if is_url:
+
+                # Solo intentamos directamente si es SoundCloud
+                if "soundcloud.com" not in query.lower():
+                    return None
+
+                search_query = query
+
+            else:
+
+                search_query = f"scsearch1:{query}"
+
+            with yt_dlp.YoutubeDL(options) as ydl:
+
+                info = ydl.extract_info(
+                    search_query,
+                    download=False
+                )
+
+                song = make_song(info)
+
+                if song:
+                    print(
+                        f"[MUSIC] Fuente: SoundCloud | {song.title}"
+                    )
+
+                    return song
+
+        except Exception as exc:
+
+            print(
+                f"[MUSIC] SoundCloud falló: {exc}"
+            )
+
+        return None
 
     return await asyncio.to_thread(extract)
 
