@@ -19,21 +19,11 @@ import imageio_ffmpeg
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
-# Canal de VOZ
 MUSIC_CHANNEL_NAME = "🎵・Music"
-
-# Canal de TEXTO donde Jockie recibe m!play
-MUSIC_TEXT_CHANNEL_NAME = "🎵・music"
-
 CODES_CHANNEL_NAME = "🎁・dbd-codes"
 CODES_URL = "https://nightlight.gg/codes"
 
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
-
-
-# =========================================================
-# YT-DLP
-# =========================================================
 
 YTDL_OPTIONS = {
     "format": "bestaudio/best",
@@ -55,11 +45,7 @@ YTDL_PLAYLIST_OPTIONS = {
 }
 
 FFMPEG_OPTIONS = {
-    "before_options": (
-        "-reconnect 1 "
-        "-reconnect_streamed 1 "
-        "-reconnect_delay_max 5"
-    ),
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
 }
 
@@ -72,31 +58,20 @@ intents = discord.Intents.default()
 intents.voice_states = True
 intents.guilds = True
 
-client = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
+from discord.ext import commands
 
+client = commands.Bot(command_prefix="!", intents=intents)
 tree = client.tree
 
 GUILD_ID = 512748868761550859
 GUILD = discord.Object(id=GUILD_ID)
-
 
 # =========================================================
 # MÚSICA
 # =========================================================
 
 class Song:
-
-    def __init__(
-        self,
-        title,
-        url,
-        webpage_url=None,
-        duration=0,
-        thumbnail=None
-    ):
+    def __init__(self, title, url, webpage_url=None, duration=0, thumbnail=None):
         self.title = title
         self.url = url
         self.webpage_url = webpage_url
@@ -109,18 +84,16 @@ now_playing = {}
 
 
 def get_queue(guild_id):
-
     if guild_id not in music_queues:
         music_queues[guild_id] = deque()
-
     return music_queues[guild_id]
 
 
-# =========================================================
-# EXTRAER CANCIÓN
-# =========================================================
-
 async def extract_song(query):
+    """
+    Busca una canción primero en YouTube.
+    Si YouTube falla, intenta automáticamente SoundCloud.
+    """
 
     def make_song(info):
 
@@ -162,16 +135,14 @@ async def extract_song(query):
             ),
         )
 
-
     def extract():
 
         is_url = query.startswith(
             ("http://", "https://")
         )
 
-
         # =================================================
-        # YOUTUBE
+        # 1. YOUTUBE
         # =================================================
 
         try:
@@ -184,15 +155,22 @@ async def extract_song(query):
             }
 
             if is_url:
+
                 search_query = query
+
             else:
-                search_query = f"ytsearch1:{query}"
+
+                search_query = (
+                    f"ytsearch1:{query}"
+                )
 
             print(
                 f"[MUSIC] Intentando YouTube: {search_query}"
             )
 
-            with yt_dlp.YoutubeDL(options) as ydl:
+            with yt_dlp.YoutubeDL(
+                options
+            ) as ydl:
 
                 info = ydl.extract_info(
                     search_query,
@@ -212,13 +190,11 @@ async def extract_song(query):
         except Exception as exc:
 
             print(
-                "[MUSIC] YouTube no disponible: "
-                f"{type(exc).__name__}: {exc}"
+                f"[MUSIC] YouTube no disponible: {type(exc).__name__}"
             )
 
-
         # =================================================
-        # SOUNDCLOUD
+        # 2. SOUNDCLOUD
         # =================================================
 
         try:
@@ -244,13 +220,17 @@ async def extract_song(query):
 
             else:
 
-                search_query = f"scsearch1:{query}"
+                search_query = (
+                    f"scsearch1:{query}"
+                )
 
             print(
                 f"[MUSIC] Intentando SoundCloud: {search_query}"
             )
 
-            with yt_dlp.YoutubeDL(options) as ydl:
+            with yt_dlp.YoutubeDL(
+                options
+            ) as ydl:
 
                 info = ydl.extract_info(
                     search_query,
@@ -270,10 +250,8 @@ async def extract_song(query):
         except Exception as exc:
 
             print(
-                "[MUSIC] SoundCloud no disponible: "
-                f"{type(exc).__name__}: {exc}"
+                f"[MUSIC] SoundCloud no disponible: {type(exc).__name__}: {exc}"
             )
-
 
         print(
             "[MUSIC] No se encontró una fuente reproducible."
@@ -281,79 +259,47 @@ async def extract_song(query):
 
         return None
 
-
     return await asyncio.to_thread(extract)
 
-
-# =========================================================
-# CONECTAR AL CANAL DE VOZ
-# =========================================================
-
 async def connect_to_user_channel(interaction):
-
     if not interaction.user.voice:
-
         await interaction.followup.send(
-            "❌ Primero entra a **🎵・Music** "
-            "o a un canal de voz."
+            "❌ Primero entra a **🎵・Music** o a un canal de voz."
         )
-
         return None
 
-
     channel = interaction.user.voice.channel
-
     guild_id = interaction.guild.id
 
     voice_client = interaction.guild.voice_client
 
-
     if voice_client:
-
         if voice_client.channel != channel:
-
             await voice_client.move_to(channel)
-
         return voice_client
-
 
     return await channel.connect()
 
 
-# =========================================================
-# REPRODUCIR SIGUIENTE
-# =========================================================
-
 async def play_next(guild_id):
-
     guild = client.get_guild(guild_id)
 
     if not guild:
         return
-
 
     voice_client = guild.voice_client
 
     if not voice_client:
         return
 
-
     queue = get_queue(guild_id)
 
     if not queue:
-
-        now_playing.pop(
-            guild_id,
-            None
-        )
-
+        now_playing.pop(guild_id, None)
         return
 
-
     song = queue.popleft()
-
     now_playing[guild_id] = song
-
 
     source = discord.FFmpegPCMAudio(
         song.url,
@@ -361,31 +307,18 @@ async def play_next(guild_id):
         **FFMPEG_OPTIONS
     )
 
-
     def after_playing(error):
-
         if error:
-
-            print(
-                f"[MUSIC] Playback error: {error}"
-            )
-
+            print(f"[MUSIC] Playback error: {error}")
 
         asyncio.run_coroutine_threadsafe(
             play_next(guild_id),
             client.loop
         )
 
+    voice_client.play(source, after=after_playing)
 
-    voice_client.play(
-        source,
-        after=after_playing
-    )
-
-
-    print(
-        f"[MUSIC] Playing: {song.title}"
-    )
+    print(f"[MUSIC] Playing: {song.title}")
 
 
 # =========================================================
@@ -396,68 +329,40 @@ async def play_next(guild_id):
     name="play",
     description="Busca y reproduce una canción o reproduce una URL."
 )
-@app_commands.describe(
-    query="Nombre de la canción o URL"
-)
-async def play(
-    interaction: discord.Interaction,
-    query: str
-):
+@app_commands.describe(query="Nombre de la canción o URL")
+async def play(interaction: discord.Interaction, query: str):
 
     await interaction.response.defer()
 
-
     if not interaction.guild:
-
         await interaction.followup.send(
-            "❌ Este comando solo funciona "
-            "dentro de un servidor."
+            "❌ Este comando solo funciona dentro de un servidor."
         )
-
         return
 
-
     try:
-
-        voice_client = await connect_to_user_channel(
-            interaction
-        )
-
+        voice_client = await connect_to_user_channel(interaction)
 
         if not voice_client:
             return
-
 
         await interaction.followup.send(
             f"🔎 Buscando **{query}**..."
         )
 
-
         song = await extract_song(query)
 
-
         if not song:
-
             await interaction.followup.send(
                 "❌ No encontré esa canción."
             )
-
             return
 
+        queue = get_queue(interaction.guild.id)
 
-        queue = get_queue(
-            interaction.guild.id
-        )
-
-
-        was_playing = (
-            voice_client.is_playing()
-            or voice_client.is_paused()
-        )
-
+        was_playing = voice_client.is_playing() or voice_client.is_paused()
 
         queue.append(song)
-
 
         embed = discord.Embed(
             title="🎵 Añadido a la cola",
@@ -465,18 +370,11 @@ async def play(
             timestamp=datetime.now(timezone.utc)
         )
 
-
         if song.thumbnail:
-
-            embed.set_thumbnail(
-                url=song.thumbnail
-            )
-
+            embed.set_thumbnail(url=song.thumbnail)
 
         if song.webpage_url:
-
             embed.url = song.webpage_url
-
 
         embed.add_field(
             name="📋 Posición",
@@ -484,25 +382,13 @@ async def play(
             inline=True
         )
 
-
-        await interaction.followup.send(
-            embed=embed
-        )
-
+        await interaction.followup.send(embed=embed)
 
         if not was_playing:
-
-            await play_next(
-                interaction.guild.id
-            )
-
+            await play_next(interaction.guild.id)
 
     except Exception as exc:
-
-        print(
-            f"[PLAY] Error: {exc}"
-        )
-
+        print(f"[PLAY] Error: {exc}")
 
         await interaction.followup.send(
             "❌ No pude reproducir esa canción. "
@@ -523,24 +409,15 @@ async def skip(interaction: discord.Interaction):
     if not interaction.guild:
         return
 
-
     voice_client = interaction.guild.voice_client
 
-
-    if (
-        not voice_client
-        or not voice_client.is_playing()
-    ):
-
+    if not voice_client or not voice_client.is_playing():
         await interaction.response.send_message(
             "❌ No hay ninguna canción reproduciéndose."
         )
-
         return
 
-
     voice_client.stop()
-
 
     await interaction.response.send_message(
         "⏭️ **Canción saltada.**"
@@ -559,21 +436,13 @@ async def pause(interaction: discord.Interaction):
 
     voice_client = interaction.guild.voice_client
 
-
-    if (
-        not voice_client
-        or not voice_client.is_playing()
-    ):
-
+    if not voice_client or not voice_client.is_playing():
         await interaction.response.send_message(
             "❌ No hay música reproduciéndose."
         )
-
         return
 
-
     voice_client.pause()
-
 
     await interaction.response.send_message(
         "⏸️ **Música pausada.**"
@@ -592,21 +461,13 @@ async def resume(interaction: discord.Interaction):
 
     voice_client = interaction.guild.voice_client
 
-
-    if (
-        not voice_client
-        or not voice_client.is_paused()
-    ):
-
+    if not voice_client or not voice_client.is_paused():
         await interaction.response.send_message(
             "❌ La música no está pausada."
         )
-
         return
 
-
     voice_client.resume()
-
 
     await interaction.response.send_message(
         "▶️ **Música reanudada.**"
@@ -624,25 +485,13 @@ async def resume(interaction: discord.Interaction):
 async def stop(interaction: discord.Interaction):
 
     guild_id = interaction.guild.id
-
     voice_client = interaction.guild.voice_client
 
-
     get_queue(guild_id).clear()
+    now_playing.pop(guild_id, None)
 
-    now_playing.pop(
-        guild_id,
-        None
-    )
-
-
-    if (
-        voice_client
-        and voice_client.is_playing()
-    ):
-
+    if voice_client and voice_client.is_playing():
         voice_client.stop()
-
 
     await interaction.response.send_message(
         "⏹️ **Música detenida y cola limpiada.**"
@@ -657,64 +506,38 @@ async def stop(interaction: discord.Interaction):
     name="queue",
     description="Muestra la cola de reproducción."
 )
-async def queue_command(
-    interaction: discord.Interaction
-):
+async def queue_command(interaction: discord.Interaction):
 
-    queue = get_queue(
-        interaction.guild.id
-    )
-
-    current = now_playing.get(
-        interaction.guild.id
-    )
-
+    queue = get_queue(interaction.guild.id)
+    current = now_playing.get(interaction.guild.id)
 
     lines = []
 
-
     if current:
-
         lines.append(
             f"🎵 **Reproduciendo:** {current.title}"
         )
 
-
     if queue:
+        lines.append("\n📋 **Siguiente:**")
 
-        lines.append(
-            "\n📋 **Siguiente:**"
-        )
-
-
-        for i, song in enumerate(
-            list(queue)[:15],
-            start=1
-        ):
-
+        for i, song in enumerate(list(queue)[:15], start=1):
             lines.append(
                 f"`{i}.` {song.title}"
             )
 
-
     if not lines:
-
         await interaction.response.send_message(
             "📭 La cola está vacía."
         )
-
         return
-
 
     embed = discord.Embed(
         title="📜 Cola de Fascinating",
         description="\n".join(lines)
     )
 
-
-    await interaction.response.send_message(
-        embed=embed
-    )
+    await interaction.response.send_message(embed=embed)
 
 
 # =========================================================
@@ -725,45 +548,28 @@ async def queue_command(
     name="nowplaying",
     description="Muestra la canción actual."
 )
-async def nowplaying(
-    interaction: discord.Interaction
-):
+async def nowplaying(interaction: discord.Interaction):
 
-    song = now_playing.get(
-        interaction.guild.id
-    )
-
+    song = now_playing.get(interaction.guild.id)
 
     if not song:
-
         await interaction.response.send_message(
             "📭 No hay ninguna canción reproduciéndose."
         )
-
         return
-
 
     embed = discord.Embed(
         title="🎵 Ahora reproduciendo",
         description=f"**{song.title}**"
     )
 
-
     if song.thumbnail:
-
-        embed.set_thumbnail(
-            url=song.thumbnail
-        )
-
+        embed.set_thumbnail(url=song.thumbnail)
 
     if song.webpage_url:
-
         embed.url = song.webpage_url
 
-
-    await interaction.response.send_message(
-        embed=embed
-    )
+    await interaction.response.send_message(embed=embed)
 
 
 # =========================================================
@@ -774,20 +580,13 @@ async def nowplaying(
     name="join",
     description="Hace que Fascinating Bot entre a tu canal de voz."
 )
-async def join(
-    interaction: discord.Interaction
-):
+async def join(interaction: discord.Interaction):
 
     await interaction.response.defer()
 
-
-    voice_client = await connect_to_user_channel(
-        interaction
-    )
-
+    voice_client = await connect_to_user_channel(interaction)
 
     if voice_client:
-
         await interaction.followup.send(
             f"🎵 Ya estoy en **{voice_client.channel.name}**."
         )
@@ -801,35 +600,20 @@ async def join(
     name="leave",
     description="Hace que Fascinating Bot salga del canal de voz."
 )
-async def leave(
-    interaction: discord.Interaction
-):
+async def leave(interaction: discord.Interaction):
 
     voice_client = interaction.guild.voice_client
 
-
     if not voice_client:
-
         await interaction.response.send_message(
             "❌ No estoy conectado a ningún canal."
         )
-
         return
 
-
-    get_queue(
-        interaction.guild.id
-    ).clear()
-
-
-    now_playing.pop(
-        interaction.guild.id,
-        None
-    )
-
+    get_queue(interaction.guild.id).clear()
+    now_playing.pop(interaction.guild.id, None)
 
     await voice_client.disconnect()
-
 
     await interaction.response.send_message(
         "👋 **Fascinating Bot salió del canal.**"
@@ -837,100 +621,57 @@ async def leave(
 
 
 # =========================================================
-# AUTOMÁTICO
-# ENTRAR + ENVIAR m!play A JOCKIE
+# AUTOMÁTICO: ENTRAR A 🎵・Music + PEDIR A JOCKIE QUE REPRODUZCA
 # =========================================================
 
-@client.event
-async def on_voice_state_update(
-    member,
-    before,
-    after
-):
+# Canal de TEXTO donde Jockie recibe el comando m!play.
+MUSIC_TEXT_CHANNEL_NAME = "🎵・music"
+JOCKIE_COMMAND = "m!play Shakira Las de la Intuición"
 
-    # Ignorar bots
+
+@client.event
+async def on_voice_state_update(member, before, after):
+
     if member.bot:
         return
 
-
-    # Solo nos interesa cuando alguien entra
     if after.channel is None:
         return
 
-
-    # Solo en 🎵・Music
     if after.channel.name != MUSIC_CHANNEL_NAME:
         return
 
-
     guild = member.guild
 
-
-    # Si Fascinating Bot ya está conectado,
-    # no hacemos nada
     if guild.voice_client is not None:
         return
 
-
     try:
-
-        # =================================================
-        # 1. ENTRAR AL CANAL DE VOZ
-        # =================================================
-
-        voice_client = await after.channel.connect()
-
+        await after.channel.connect()
 
         print(
-            f"[VOICE] Entré automáticamente a "
-            f"{after.channel.name}"
+            f"[VOICE] Entré automáticamente a {after.channel.name}"
         )
-
-
-        # =================================================
-        # 2. BUSCAR EL CANAL DE TEXTO
-        # =================================================
 
         text_channel = discord.utils.get(
             guild.text_channels,
             name=MUSIC_TEXT_CHANNEL_NAME
         )
 
-
         if not text_channel:
-
             print(
-                "[JOCKIE] No encontré el canal de texto "
-                f"{MUSIC_TEXT_CHANNEL_NAME}"
+                f"[JOCKIE] No encontré el canal de texto: {MUSIC_TEXT_CHANNEL_NAME}"
             )
-
             return
 
-
-        # =================================================
-        # 3. ENVIAR EL COMANDO A JOCKIE
-        # =================================================
-
-        command = (
-            "m!play Shakira Las de la Intuición"
-        )
-
-
-        await text_channel.send(
-            command
-        )
-
+        await text_channel.send(JOCKIE_COMMAND)
 
         print(
-            f"[JOCKIE] Comando enviado: {command}"
+            f"[JOCKIE] Comando enviado: {JOCKIE_COMMAND}"
         )
-
 
     except Exception as exc:
-
-        print(
-            f"[VOICE/JOCKIE] Error: {exc}"
-        )
+        print(f"[VOICE/JOCKIE] Error: {exc}")
 
 
 # =========================================================
@@ -959,17 +700,9 @@ async def fetch_codes():
 
 def extract_codes(html):
 
-    soup = BeautifulSoup(
-        html,
-        "html.parser"
-    )
+    soup = BeautifulSoup(html, "html.parser")
 
-
-    text = soup.get_text(
-        "\n",
-        strip=True
-    )
-
+    text = soup.get_text("\n", strip=True)
 
     candidates = set(
         re.findall(
@@ -977,7 +710,6 @@ def extract_codes(html):
             text
         )
     )
-
 
     noise = {
         "DEADBYDAYLIGHT",
@@ -992,7 +724,6 @@ def extract_codes(html):
         "STORE"
     }
 
-
     return {
         code
         for code in candidates
@@ -1000,30 +731,21 @@ def extract_codes(html):
     }
 
 
-# =========================================================
-# /CODES
-# =========================================================
-
 @tree.command(
     name="codes",
     description="Muestra los códigos activos de Dead by Daylight."
 )
-async def codes(
-    interaction: discord.Interaction
-):
+async def codes(interaction: discord.Interaction):
 
     await interaction.response.defer()
-
 
     try:
 
         html = await fetch_codes()
 
-
         current = sorted(
             extract_codes(html)
         )
-
 
         if not current:
 
@@ -1032,7 +754,6 @@ async def codes(
             )
 
             return
-
 
         embed = discord.Embed(
             title="🎁 Códigos de Dead by Daylight",
@@ -1043,48 +764,33 @@ async def codes(
             url=CODES_URL
         )
 
-
         embed.set_footer(
             text="Fascinating Bot • NightLight"
         )
-
 
         await interaction.followup.send(
             embed=embed
         )
 
-
     except Exception as exc:
 
-        print(
-            f"[CODES] Error: {exc}"
-        )
-
+        print(f"[CODES] Error: {exc}")
 
         await interaction.followup.send(
             "❌ No pude consultar los códigos ahora."
         )
 
 
-# =========================================================
-# COMPROBAR CÓDIGOS CADA 15 MINUTOS
-# =========================================================
-
 @tasks.loop(minutes=15)
 async def check_dbd_codes():
 
     global last_codes
 
-
     try:
 
         html = await fetch_codes()
 
-
-        current = extract_codes(
-            html
-        )
-
+        current = extract_codes(html)
 
         if not last_codes:
 
@@ -1092,18 +798,14 @@ async def check_dbd_codes():
 
             return
 
-
         new_codes = sorted(
             current - last_codes
         )
 
-
         last_codes = current
-
 
         if not new_codes:
             return
-
 
         for guild in client.guilds:
 
@@ -1112,10 +814,8 @@ async def check_dbd_codes():
                 name=CODES_CHANNEL_NAME
             )
 
-
             if not channel:
                 continue
-
 
             for code in new_codes:
 
@@ -1126,21 +826,16 @@ async def check_dbd_codes():
                         "¡Canjea este código antes de que expire! 🔥"
                     ),
                     url=CODES_URL,
-                    timestamp=datetime.now(
-                        timezone.utc
-                    )
+                    timestamp=datetime.now(timezone.utc)
                 )
-
 
                 embed.set_footer(
                     text="Fascinating Bot • NightLight"
                 )
 
-
                 await channel.send(
                     embed=embed
                 )
-
 
     except Exception as exc:
 
@@ -1170,24 +865,19 @@ async def start_web_server():
 
     app = web.Application()
 
-
     app.router.add_get(
         "/",
         health
     )
-
 
     app.router.add_get(
         "/health",
         health
     )
 
-
     runner = web.AppRunner(app)
 
-
     await runner.setup()
-
 
     port = int(
         os.environ.get(
@@ -1196,13 +886,11 @@ async def start_web_server():
         )
     )
 
-
     site = web.TCPSite(
         runner,
         "0.0.0.0",
         port
     )
-
 
     await site.start()
 
@@ -1214,61 +902,24 @@ async def start_web_server():
 @client.event
 async def on_ready():
 
-    print(
-        f"🤖 Logged in as "
-        f"{client.user} ({client.user.id})"
-    )
-
+    print(f"🤖 Logged in as {client.user} ({client.user.id})")
 
     try:
-
-        client.tree.copy_global_to(
-            guild=GUILD
-        )
-
-
-        synced = await client.tree.sync(
-            guild=GUILD
-        )
-
-
-        print(
-            f"✅ Synced {len(synced)} slash commands."
-        )
-
-
+        client.tree.copy_global_to(guild=GUILD)
+        synced = await client.tree.sync(guild=GUILD)
+        print(f"✅ Synced {len(synced)} slash commands.")
     except Exception as exc:
-
-        print(
-            f"❌ [SYNC] Error: {exc}"
-        )
-
+        print(f"❌ [SYNC] Error: {exc}")
 
     try:
-
         await start_web_server()
-
-
-        print(
-            "🌐 Web server started."
-        )
-
-
+        print("🌐 Web server started.")
     except Exception as exc:
-
-        print(
-            f"❌ [WEB] Error: {exc}"
-        )
-
+        print(f"❌ [WEB] Error: {exc}")
 
     if not check_dbd_codes.is_running():
-
         check_dbd_codes.start()
-
-
-        print(
-            "🎁 DBD code checker started."
-        )
+        print("🎁 DBD code checker started.")
 
 
 # =========================================================
