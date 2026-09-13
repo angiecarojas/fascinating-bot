@@ -1,7 +1,8 @@
-
 import os
 import asyncio
 import re
+import tempfile
+from pathlib import Path
 from collections import deque
 from datetime import datetime, timezone
 
@@ -25,6 +26,8 @@ CODES_CHANNEL_NAME = "🎁・dbd-codes"
 CODES_URL = "https://nightlight.gg/codes"
 
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
+MUSIC_TEMP_DIR = Path(tempfile.gettempdir()) / "fascinating_music"
+MUSIC_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 YTDL_OPTIONS = {
     "format": "bestaudio/best",
@@ -72,12 +75,21 @@ GUILD = discord.Object(id=GUILD_ID)
 # =========================================================
 
 class Song:
-    def __init__(self, title, url, webpage_url=None, duration=0, thumbnail=None):
+    def __init__(
+        self,
+        title,
+        url,
+        webpage_url=None,
+        duration=0,
+        thumbnail=None,
+        local_path=None,
+    ):
         self.title = title
         self.url = url
         self.webpage_url = webpage_url
         self.duration = duration or 0
         self.thumbnail = thumbnail
+        self.local_path = local_path
 
 
 music_queues = {}
@@ -262,6 +274,79 @@ async def extract_song(query):
 
     return await asyncio.to_thread(extract)
 
+
+async def download_song(song):
+    """
+    Descarga el audio a un archivo local temporal.
+    Esto evita que FFmpeg tenga que reproducir directamente
+    una URL remota, que en Render puede provocar crashes.
+    """
+    def download():
+        safe_name = re.sub(
+            r"[^a-zA-Z0-9._-]+",
+            "_",
+            song.title
+        )[:80] or "song"
+
+        output_template = str(
+            MUSIC_TEMP_DIR / f"{safe_name}_%(id)s.%(ext)s"
+        )
+
+        options = {
+            "format": "bestaudio/best",
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "outtmpl": output_template,
+            "restrictfilenames": True,
+            "ffmpeg_location": FFMPEG_PATH,
+        }
+
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(
+                song.webpage_url or song.url,
+                download=True
+            )
+
+            prepared = Path(
+                ydl.prepare_filename(info)
+            )
+
+            # Si yt-dlp descargó un archivo con otra extensión,
+            # buscamos el archivo real generado.
+            candidates = [
+                prepared,
+                *prepared.parent.glob(
+                    prepared.stem + ".*"
+                ),
+            ]
+
+            for candidate in candidates:
+                if candidate.exists() and candidate.is_file():
+                    song.local_path = str(candidate)
+                    return song
+
+        return None
+
+    return await asyncio.to_thread(download)
+
+
+async def prepare_song_for_playback(song):
+    """
+    Prepara cualquier canción para reproducción local.
+    """
+    try:
+        return await download_song(song)
+    except Exception as exc:
+        print(
+            f"[MUSIC] No pude descargar '{song.title}': "
+            f"{type(exc).__name__}: {exc}"
+        )
+        return None
+
+
+
 async def connect_to_user_channel(interaction):
     if not interaction.user.voice:
         await interaction.followup.send(
@@ -300,26 +385,66 @@ async def play_next(guild_id):
         return
 
     song = queue.popleft()
+
+    print(f"[MUSIC] Preparando: {song.title}")
+
+    # Si todavía no tenemos archivo local, lo descargamos.
+    if not song.local_path:
+        prepared = await prepare_song_for_playback(song)
+
+        if not prepared:
+            print(
+                f"[MUSIC] No se pudo preparar: {song.title}"
+            )
+            await play_next(guild_id)
+            return
+
+        song = prepared
+
     now_playing[guild_id] = song
 
+    # Reproducimos un archivo LOCAL, no una URL remota.
     source = discord.FFmpegPCMAudio(
-        song.url,
+        song.local_path,
         executable=FFMPEG_PATH,
-        **FFMPEG_OPTIONS
+        options="-vn"
     )
 
     def after_playing(error):
         if error:
-            print(f"[MUSIC] Playback error: {error}")
+            print(
+                f"[MUSIC] Playback error: {error}"
+            )
+
+        # Borra el archivo temporal después de terminar.
+        try:
+            if song.local_path:
+                path = Path(song.local_path)
+                if path.exists():
+                    path.unlink()
+                    print(
+                        f"[MUSIC] Archivo temporal eliminado: "
+                        f"{path.name}"
+                    )
+        except Exception as exc:
+            print(
+                f"[MUSIC] No pude borrar archivo temporal: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         asyncio.run_coroutine_threadsafe(
             play_next(guild_id),
             client.loop
         )
 
-    voice_client.play(source, after=after_playing)
+    voice_client.play(
+        source,
+        after=after_playing
+    )
 
-    print(f"[MUSIC] Playing: {song.title}")
+    print(
+        f"[MUSIC] Playing local file: {song.title}"
+    )
 
 
 # =========================================================
@@ -625,11 +750,13 @@ async def leave(interaction: discord.Interaction):
 # AUTOMÁTICO: ENTRAR A 🎵・Music + REPRODUCIR SHAKIRA
 # =========================================================
 
-AUTO_SONG_URL = "https://soundcloud.com/dj-nonoparana/shakira-las-de-la-intuicion-dj-nono-parana-remix"
+AUTO_SONG_URL = (
+    "https://soundcloud.com/dj-nonoparana/"
+    "shakira-las-de-la-intuicion-dj-nono-parana-remix"
+)
 
 
 async def play_auto_song(guild):
-
     voice_client = guild.voice_client
 
     if not voice_client:
@@ -639,28 +766,45 @@ async def play_auto_song(guild):
         return
 
     try:
-        print(f"[AUTO MUSIC] Buscando fuente: {AUTO_SONG_URL}")
+        print(
+            f"[AUTO MUSIC] Preparando: {AUTO_SONG_URL}"
+        )
 
         song = await extract_song(AUTO_SONG_URL)
 
         if not song:
-            print("[AUTO MUSIC] No pude obtener el audio de SoundCloud.")
+            print(
+                "[AUTO MUSIC] No pude encontrar la canción."
+            )
+            return
+
+        prepared = await prepare_song_for_playback(song)
+
+        if not prepared:
+            print(
+                "[AUTO MUSIC] No pude descargar el audio."
+            )
             return
 
         queue = get_queue(guild.id)
-        queue.append(song)
+        queue.appendleft(prepared)
 
-        print(f"[AUTO MUSIC] Canción preparada: {song.title}")
+        print(
+            f"[AUTO MUSIC] Canción preparada: "
+            f"{prepared.title}"
+        )
 
         await play_next(guild.id)
 
     except Exception as exc:
-        print(f"[AUTO MUSIC] Error reproduciendo: {type(exc).__name__}: {exc}")
+        print(
+            "[AUTO MUSIC] Error: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
 
 @client.event
 async def on_voice_state_update(member, before, after):
-
     if member.bot:
         return
 
@@ -679,14 +823,16 @@ async def on_voice_state_update(member, before, after):
         await after.channel.connect()
 
         print(
-            f"[VOICE] Entré automáticamente a {after.channel.name}"
+            f"[VOICE] Entré automáticamente a "
+            f"{after.channel.name}"
         )
 
         await play_auto_song(guild)
 
     except Exception as exc:
         print(
-            f"[VOICE/AUTO MUSIC] Error: {type(exc).__name__}: {exc}"
+            f"[VOICE/AUTO MUSIC] Error: "
+            f"{type(exc).__name__}: {exc}"
         )
 
 
