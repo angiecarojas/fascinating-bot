@@ -1068,7 +1068,7 @@ async def on_voice_state_update(
 # =========================================================
 
 @tasks.loop(
-    days=AUTO_SONG_DAYS
+    hours=AUTO_SONG_DAYS * 24
 )
 
 async def auto_song_loop():
