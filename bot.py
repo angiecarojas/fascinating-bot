@@ -1,4 +1,4 @@
-import os
+
 import asyncio
 import re
 from collections import deque
@@ -621,12 +621,40 @@ async def leave(interaction: discord.Interaction):
 
 
 # =========================================================
-# AUTOMÁTICO: ENTRAR A 🎵・Music + PEDIR A JOCKIE QUE REPRODUZCA
+# AUTOMÁTICO: ENTRAR A 🎵・Music + REPRODUCIR SHAKIRA
 # =========================================================
 
-# Canal de TEXTO donde Jockie recibe el comando m!play.
-MUSIC_TEXT_CHANNEL_NAME = "🎵・music"
-JOCKIE_COMMAND = "m!play Shakira Las de la Intuición"
+AUTO_SONG_URL = "https://soundcloud.com/dj-nonoparana/shakira-las-de-la-intuicion-dj-nono-parana-remix"
+
+
+async def play_auto_song(guild):
+
+    voice_client = guild.voice_client
+
+    if not voice_client:
+        return
+
+    if voice_client.is_playing() or voice_client.is_paused():
+        return
+
+    try:
+        print(f"[AUTO MUSIC] Buscando fuente: {AUTO_SONG_URL}")
+
+        song = await extract_song(AUTO_SONG_URL)
+
+        if not song:
+            print("[AUTO MUSIC] No pude obtener el audio de SoundCloud.")
+            return
+
+        queue = get_queue(guild.id)
+        queue.append(song)
+
+        print(f"[AUTO MUSIC] Canción preparada: {song.title}")
+
+        await play_next(guild.id)
+
+    except Exception as exc:
+        print(f"[AUTO MUSIC] Error reproduciendo: {type(exc).__name__}: {exc}")
 
 
 @client.event
@@ -653,25 +681,12 @@ async def on_voice_state_update(member, before, after):
             f"[VOICE] Entré automáticamente a {after.channel.name}"
         )
 
-        text_channel = discord.utils.get(
-            guild.text_channels,
-            name=MUSIC_TEXT_CHANNEL_NAME
-        )
-
-        if not text_channel:
-            print(
-                f"[JOCKIE] No encontré el canal de texto: {MUSIC_TEXT_CHANNEL_NAME}"
-            )
-            return
-
-        await text_channel.send(JOCKIE_COMMAND)
-
-        print(
-            f"[JOCKIE] Comando enviado: {JOCKIE_COMMAND}"
-        )
+        await play_auto_song(guild)
 
     except Exception as exc:
-        print(f"[VOICE/JOCKIE] Error: {exc}")
+        print(
+            f"[VOICE/AUTO MUSIC] Error: {type(exc).__name__}: {exc}"
+        )
 
 
 # =========================================================
